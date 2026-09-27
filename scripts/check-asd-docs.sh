@@ -517,4 +517,4 @@ check_adr_length
 
 printf 'docs check: %d file(s) checked, %d violation(s)\n' "$files_checked" "$violations"
 [ "$violations" -eq 0 ] || exit 1
-printf 'docs check: all documentation files comply with the ASD-STE100 Issue 9 standard\n'
+printf 'docs check: structural and style checks passed. Review vocabulary and meaning against Issue 9.\n'

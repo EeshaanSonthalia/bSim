@@ -24,6 +24,8 @@ just check
 
 The thermal guard pauses workloads at 37.5 degrees Celsius battery temperature or 75 degrees Celsius CPU or GPU temperature.
 It also stops work when a sensor fails.
+Readings below 5 degrees Celsius are invalid on this host.
+Cancellation stops new work and restores the terminal cursor.
 These limits do not guarantee a physical temperature ceiling. Other applications and ambient heat remain outside application control.
 
 ## Related Pages
