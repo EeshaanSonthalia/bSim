@@ -95,16 +95,48 @@ kernel void rayStep(device Ray *rays [[buffer(0)]],device uint *input [[buffer(1
     maps[index]=map; rays[index]=ray;
     if(ray.status.x==0) output[atomic_fetch_add_explicit(count,1,memory_order_relaxed)]=index;
 }
+uint hash32(uint value) {
+    uint mixed=value;
+    mixed^=mixed>>16; mixed*=0x7feb352du;
+    mixed^=mixed>>15; mixed*=0x846ca68bu;
+    mixed^=mixed>>16;
+    return mixed;
+}
+float unit(uint salt,uint key) { return float(hash32(salt^key))*(1.0f/4294967296.0f); }
+float noise(uint salt,float x) {
+    float cell=floor(x),t=x-cell;
+    t=t*t*(3-2*t);
+    int index=(int)cell;
+    float low=unit(salt,as_type<uint>(index)),high=unit(salt,as_type<uint>(index+1));
+    return low+(high-low)*t;
+}
+float band(uint salt,float x) {
+    float value=0,weight=0.5f,scale=1,total=0;
+    for(uint octave=0;octave<3;octave++) {
+        value+=weight*noise(salt^(octave*0x9e3779b9u),x*scale);
+        total+=weight; weight*=0.55f; scale*=2.13f;
+    }
+    return value/total;
+}
 float3 emission(constant Params &p,float r,float phi,float time,float footprint) {
-    float phase=phi-time*p.material.z/(pow(r,1.5f)+p.disk.x),seed=float(p.image.w%1024)*0.013f;
+    float phase=phi-time*p.material.z/(pow(r,1.5f)+p.disk.x);
+    uint salt=p.image.w;
+    float undulate=sin(phase),envelope=band(salt,r*0.55f+0.3f*undulate),wobbleAt=r*0.45f+0.35f*undulate;
     float filaments=0,norm=0;
     for(uint i=0;i<6;i++) {
-        float f=float(i),freq=7*pow(1.9f,f),weight=pow(0.58f,f);
-        filaments+=weight*exp(-0.5f*freq*freq*footprint*footprint)*sin(r*freq+2*sin(phase*(3+f)+r*0.4f+seed)+phase*(2+f));
-        norm+=weight;
+        uint key=i*0x85ebca6bu;
+        float f=float(i),freq=7*pow(1.9f,f);
+        float strength=pow(0.58f,f)*(0.45f+1.1f*unit(salt,key+1u));
+        float attenuation=exp(-0.5f*freq*freq*footprint*footprint);
+        float order=float(1u+hash32(salt^(key+2u))%7u),swirlOrder=float(2u+hash32(salt^(key+3u))%6u);
+        float swirlPhase=unit(salt,key+4u)*(2*M_PI_F),drift=(unit(salt,key+5u)-0.5f)*(2*M_PI_F);
+        float swirl=1.2f+1.6f*unit(salt,key+7u);
+        float wobble=(noise(salt^(key+6u),wobbleAt)-0.5f)*M_PI_F;
+        filaments+=strength*attenuation*sin(r*freq+wobble+order*phase+swirl*sin(swirlOrder*phase+r*0.4f+swirlPhase)+drift);
+        norm+=strength;
     }
     float edge=smoothstep(p.disk.y,p.disk.y+0.6f,r)*(1-smoothstep(p.disk.z-3,p.disk.z,r));
-    float brightness=p.material.w*edge*pow(p.disk.y/max(r,p.disk.y),1.2f)*(0.65f+0.55f*filaments/norm);
+    float brightness=p.material.w*edge*pow(p.disk.y/max(r,p.disk.y),1.2f)*(0.65f+0.55f*envelope*filaments/norm);
     return brightness*p.color.rgb;
 }
 kernel void shadeMap(device const Map *maps [[buffer(0)]],device float4 *colors [[buffer(1)]],constant Params &p [[buffer(2)]],uint id [[thread_position_in_grid]]) {
