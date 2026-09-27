@@ -1,0 +1,55 @@
+# bSim
+
+bSim is a cinematic Kerr black hole renderer for Apple Silicon, built with Zig 0.16.0 and Metal.
+
+## Features
+
+- bSim traces past-directed light rays around a Kerr black hole with adaptive Runge-Kutta-Fehlberg integration.
+- bSim renders a thin warm disk with volumetric light transport.
+- bSim provides three prepared shots: a wide shot, an oblique orbit, and a close disk pass.
+- The preview window supports playback, pause, restart, scrubbing, fullscreen, and scene reload.
+- Exports are native 3840 by 2160 stills and animations in OpenEXR, PNG, ProRes 422 HQ, and H.264 MP4.
+- The thermal guard pauses work at the temperature limits and has no bypass flag.
+
+## Requirements
+
+- bSim needs a Mac with Apple Silicon. The target machine is an M4 MacBook Air with 16 GB memory.
+- Install the Xcode command line tools for Apple Clang.
+- Install Zig 0.16.0 and ZLS 0.16.0.
+- Install Nix. Bootstrap needs a dotfiles checkout at `$HOME/dotfiles`.
+- Install FFmpeg and FFprobe in the global Nix profile.
+- Install the just command runner and Python 3.
+
+## Quick Start
+
+Run these commands in the repository root.
+
+```sh
+sh scripts/bootstrap.sh
+just build
+just test
+```
+
+The bootstrap script checks every requirement. It also builds the thermal monitor and sets the Git hooks.
+The build and test recipes run with `scripts/thermal-run.py`. This script enforces the thermal guard during long jobs.
+
+The build uses the global Nix profile at `~/.local/state/dotfiles/nix-profile`. This profile provides OpenEXR, Imath, and FFmpeg.
+
+## Commands
+
+Use these commands after the build.
+
+```sh
+./zig-out/bin/bSim doctor
+./zig-out/bin/bSim shots
+./zig-out/bin/bSim prepare --shot wide
+./zig-out/bin/bSim render --shot close --format exr
+./zig-out/bin/bSim render --shot orbit --format prores --fps 24
+```
+
+The shot names are `wide`, `orbit`, and `close`. The format names are `png`, `exr`, `prores`, and `h264`.
+
+## Documentation
+
+Read the [specification](docs/modules/references/refBSimSpecification.md) before you change the renderer.
+Use the [documentation index](docs/index.md) to find the other project documents.
