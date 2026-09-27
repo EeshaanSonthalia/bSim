@@ -37,20 +37,39 @@ pub const App = struct {
         gpu.bsGpuDestroy(self.context);
         thermal.bsMonitorDestroy(self.scheduler.monitor);
     }
-    /// Load or calculate a lens map into caller-owned memory.
-    pub fn prepareMap(self: *App, scene: Scene, time: f64, maps: []gpu.Map) !void {
+    /// Load or calculate a lens map into caller-owned memory. Report emits terminal progress.
+    pub fn prepareMap(self: *App, scene: Scene, time: f64, maps: []gpu.Map, report: bool) !void {
+        if (report) try self.progress.event(.preparing, 0, maps.len);
+        if (!try self.loadMaps(scene, time, maps)) {
+            _ = try gpu.trace(self.context, &self.scheduler, self.io, scene, time, maps);
+            try self.finishMaps(scene, time, maps);
+        }
+        if (report) try self.progress.event(.preparing, maps.len, maps.len);
+    }
+    /// Read one prepared frame from the disk cache. Corrupt entries count as misses.
+    pub fn loadMaps(self: *App, scene: Scene, time: f64, maps: []gpu.Map) !bool {
         const key = try cache.key(self.allocator, scene, time, @embedFile("shader"));
         const path = try cache.path(self.allocator, key);
         defer self.allocator.free(path);
-        try self.progress.event(.preparing, 0, maps.len);
-        if (try cache.load(self.allocator, self.io, path, key, scene, maps)) {
-            try self.progress.event(.preparing, maps.len, maps.len);
-            return;
-        }
-        _ = try gpu.trace(self.context, &self.scheduler, self.io, scene, time, maps);
+        return cache.load(self.allocator, self.io, path, key, scene, maps);
+    }
+    /// Trace one bounded tile so the caller can service events between tiles.
+    pub fn traceTile(self: *App, scene: Scene, time: f64, offset: usize, maps: []gpu.Map) !void {
+        _ = try gpu.traceTile(self.context, &self.scheduler, self.io, scene, time, offset, maps);
+    }
+    /// Repair exceptional rays and store the finished frame with an atomic rename.
+    pub fn finishMaps(self: *App, scene: Scene, time: f64, maps: []gpu.Map) !void {
+        const key = try cache.key(self.allocator, scene, time, @embedFile("shader"));
+        const path = try cache.path(self.allocator, key);
+        defer self.allocator.free(path);
         try self.repair(scene, time, maps);
         try cache.save(self.allocator, self.io, path, key, scene, maps);
-        try self.progress.event(.preparing, maps.len, maps.len);
+    }
+    /// Shade a whole prepared frame into the shared display buffer in one submission.
+    pub fn shadeDisplay(self: *App, scene: Scene, time: f64, maps: []const gpu.Map) !void {
+        const params = gpu.Params.fromScene(scene, time, 0, @intCast(maps.len));
+        try self.scheduler.gate(self.io);
+        if (gpu.bsGpuShade(self.context, &params, maps.ptr, @intCast(maps.len)) == null) return error.MetalFailure;
     }
     fn repair(self: *App, scene: Scene, time: f64, maps: []gpu.Map) !void {
         for (maps, 0..) |*map, i| {

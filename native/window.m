@@ -3,6 +3,11 @@
 #import <MetalKit/MetalKit.h>
 #import <MetalFX/MetalFX.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
+#import <QuartzCore/CABase.h>
+#import <QuartzCore/CAMetalLayer.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdatomic.h>
 extern void *bsGpuBorrowDevice(BsGpu *gpu);
 extern void *bsGpuBorrowColorBuffer(BsGpu *gpu);
@@ -11,8 +16,8 @@ extern void *bsGpuBorrowColorBuffer(BsGpu *gpu);
 @property double seekTime;
 @end
 @implementation BsWindowState
-- (BOOL)windowShouldClose:(NSWindow *)sender {(void)sender;self.flags|=1;return NO;}
-- (void)seek:(NSSlider *)slider {self.seekTime=slider.doubleValue;self.flags|=32;}
+- (BOOL)windowShouldClose:(NSWindow *)sender {(void)sender;self.flags|=BsWindowClose;return NO;}
+- (void)seek:(NSSlider *)slider {self.seekTime=slider.doubleValue;self.flags|=BsWindowSeek;}
 @end
 @interface BsPresentationStats : NSObject {
 @public atomic_uint_fast64_t frames,lastTime,intervalSum,histogram[20000];
@@ -21,11 +26,12 @@ extern void *bsGpuBorrowColorBuffer(BsGpu *gpu);
 @implementation BsPresentationStats
 @end
 struct BsWindow {
-    CFTypeRef window,view,state,slider,device,queue,upload,display,linear,blurred,displayColor,scaler,blur,statistics;
+    CFTypeRef window,view,state,slider,device,queue,upload,display,linear,blurred,displayColor,scaler,blur,statistics,drawable;
     uint32_t width,height,outputWidth,outputHeight;
     float sigma;
     double gpuSeconds;
 };
+static NSString *title=@"bSim — Space: pause  Arrows: scrub  ,.: step  R: restart  L: reload  +/-: scale  F: fullscreen  Esc: close";
 static id obj(CFTypeRef value) {return (__bridge id)value;}
 static void save(CFTypeRef *target,id value) {if(*target)CFRelease(*target);*target=value?CFBridgingRetain(value):NULL;}
 static NSString *displaySource=@"#include <metal_stdlib>\nusing namespace metal;\n"
@@ -46,7 +52,7 @@ BsWindow *bsWindowCreate(BsGpu *gpu,double duration) {
         save(&w->display,[device newComputePipelineStateWithFunction:[library newFunctionWithName:@"display"] error:&error]);
         if(!w->upload||!w->display){bsWindowDestroy(w);return NULL;}
         NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1280,746) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable|NSWindowStyleMaskMiniaturizable backing:NSBackingStoreBuffered defer:NO];
-        window.title=@"bSim — Space: pause  R: restart  Arrows: scrub  F: fullscreen  L: reload";
+        window.title=title;
         window.releasedWhenClosed=NO;window.contentMinSize=NSMakeSize(480,296);
         BsWindowState *state=[BsWindowState new];window.delegate=state;
         NSView *container=[[NSView alloc] initWithFrame:NSMakeRect(0,0,1280,746)];container.wantsLayer=YES;container.layer.backgroundColor=NSColor.blackColor.CGColor;
@@ -63,9 +69,10 @@ BsWindow *bsWindowCreate(BsGpu *gpu,double duration) {
 void bsWindowDestroy(BsWindow *w) {
     if(!w)return;
     [(NSWindow*)obj(w->window) close];
-    CFTypeRef refs[]={w->window,w->view,w->state,w->slider,w->device,w->queue,w->upload,w->display,w->linear,w->blurred,w->displayColor,w->scaler,w->blur,w->statistics};
+    CFTypeRef refs[]={w->window,w->view,w->state,w->slider,w->device,w->queue,w->upload,w->display,w->linear,w->blurred,w->displayColor,w->scaler,w->blur,w->statistics,w->drawable};
     for(unsigned i=0;i<sizeof(refs)/sizeof(*refs);i++)if(refs[i])CFRelease(refs[i]);free(w);
 }
+void bsWindowSetDuration(BsWindow *w,double duration) {[(NSSlider*)obj(w->slider) setMaxValue:duration];}
 BsWindowEvent bsWindowPoll(BsWindow *w,double time) {
     @autoreleasepool {
         BsWindowState *state=obj(w->state);NSWindow *window=obj(w->window);
@@ -73,20 +80,30 @@ BsWindowEvent bsWindowPoll(BsWindow *w,double time) {
         while((event=[NSApp nextEventMatchingMask:NSEventMaskAny untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES])) {
             if(event.type==NSEventTypeKeyDown) {
                 switch(event.keyCode) {
-                    case 49:state.flags|=2;break;case 15:state.flags|=4;break;case 37:state.flags|=8;break;
-                    case 123:state.seekTime=fmax(0,time-0.5);state.flags|=32;break;
-                    case 124:state.seekTime=time+0.5;state.flags|=32;break;
-                    case 3:[window toggleFullScreen:nil];break;case 53:state.flags|=1;break;
+                    case 49:if(!event.isARepeat)state.flags|=BsWindowPause;break;
+                    case 15:if(!event.isARepeat)state.flags|=BsWindowRestart;break;
+                    case 37:if(!event.isARepeat)state.flags|=BsWindowReload;break;
+                    case 43:if(!event.isARepeat)state.flags|=BsWindowStepBack;break;
+                    case 47:if(!event.isARepeat)state.flags|=BsWindowStepForward;break;
+                    case 3:if(!event.isARepeat)[window toggleFullScreen:nil];break;
+                    case 123:state.seekTime=fmax(0,time-0.5);state.flags|=BsWindowSeek;break;
+                    case 124:state.seekTime=time+0.5;state.flags|=BsWindowSeek;break;
+                    case 24:case 69:state.flags|=BsWindowScaleUp;break;
+                    case 27:case 78:state.flags|=BsWindowScaleDown;break;
+                    case 53:state.flags|=BsWindowClose;break;
                     default:[NSApp sendEvent:event];break;
                 }
             } else [NSApp sendEvent:event];
         }
         NSSize size=window.contentView.bounds.size;double width=fmin(size.width,(size.height-26)*16/9),height=width*9/16;
         MTKView *view=obj(w->view);view.frame=NSMakeRect((size.width-width)/2,26+(size.height-26-height)/2,width,height);
+        CAMetalLayer *layer=(CAMetalLayer *)view.layer;
+        if(view.drawableSize.width>0&&view.drawableSize.height>0&&!CGSizeEqualToSize(layer.drawableSize,view.drawableSize))layer.drawableSize=view.drawableSize;
+        if(!w->drawable)save(&w->drawable,[layer nextDrawable]);
         NSSlider *slider=obj(w->slider);slider.frame=NSMakeRect(12,3,size.width-24,20);
-        if(!(state.flags&32))slider.doubleValue=time;
+        if(!(state.flags&BsWindowSeek))slider.doubleValue=time;
         [NSApp updateWindows];
-        BsWindowEvent out={state.flags,(uint32_t)view.drawableSize.width,(uint32_t)view.drawableSize.height,0,state.seekTime};state.flags=0;return out;
+        BsWindowEvent out={state.flags,(uint32_t)view.drawableSize.width,(uint32_t)view.drawableSize.height,w->drawable?1u:0u,state.seekTime};state.flags=0;return out;
     }
 }
 static id<MTLTexture> texture(id<MTLDevice> device,MTLPixelFormat format,uint32_t width,uint32_t height) {
@@ -96,7 +113,8 @@ static id<MTLTexture> texture(id<MTLDevice> device,MTLPixelFormat format,uint32_
 }
 int bsWindowPresent(BsWindow *w,BsGpu *gpu,const BsParams *p) {
     @autoreleasepool {
-        MTKView *view=obj(w->view);id<CAMetalDrawable> drawable=view.currentDrawable;if(!drawable)return 1;
+        if(!w->drawable)return 1;
+        id<CAMetalDrawable> drawable=obj(w->drawable);
         uint32_t ow=(uint32_t)drawable.texture.width,oh=(uint32_t)drawable.texture.height,iw=p->image[0],ih=p->image[1];
         id<MTLDevice> device=obj(w->device);
         if(w->width!=iw||w->height!=ih||w->outputWidth!=ow||w->outputHeight!=oh) {
@@ -119,12 +137,13 @@ int bsWindowPresent(BsWindow *w,BsGpu *gpu,const BsParams *p) {
         id<MTLFXSpatialScaler> scaler=obj(w->scaler);scaler.colorTexture=obj(w->displayColor);scaler.outputTexture=drawable.texture;[scaler encodeToCommandBuffer:command];
         BsPresentationStats *statistics=obj(w->statistics);
         [drawable addPresentedHandler:^(id<MTLDrawable> frame){
-            if(frame.presentedTime<=0)return;
-            uint64_t now=(uint64_t)(frame.presentedTime*1e9),last=atomic_exchange(&statistics->lastTime,now);
+            double stamp=frame.presentedTime>0?frame.presentedTime:CACurrentMediaTime();
+            uint64_t now=(uint64_t)(stamp*1e9),last=atomic_exchange(&statistics->lastTime,now);
             atomic_fetch_add(&statistics->frames,1);
             if(last && now>last){uint64_t interval=now-last;atomic_fetch_add(&statistics->intervalSum,interval);atomic_fetch_add(&statistics->histogram[MIN(interval/100000,19999)],1);}
         }];
         [command presentDrawable:drawable];[command commit];[command waitUntilCompleted];
+        save(&w->drawable,nil);
         w->gpuSeconds+=command.GPUEndTime-command.GPUStartTime;
         return command.status==MTLCommandBufferStatusCompleted?0:-1;
     }
@@ -135,4 +154,4 @@ BsPresentation bsWindowStats(BsWindow *w) {
     for(int i=0;i<20000;i++){count+=atomic_load(&s->histogram[i]);if(rank && count>=rank){p99=(i+1)*0.1;break;}}
     BsPresentation result={frames,sum?(frames-1)*1e9/sum:0,p99,w->gpuSeconds};return result;
 }
-void bsWindowSetCooling(BsWindow *w,int cooling) {[(NSWindow*)obj(w->window) setTitle:cooling?@"bSim — Cooling":@"bSim — Space: pause  R: restart  Arrows: scrub  F: fullscreen  L: reload"];}
+void bsWindowSetCooling(BsWindow *w,int cooling) {[(NSWindow*)obj(w->window) setTitle:cooling?@"bSim — Cooling":title];}

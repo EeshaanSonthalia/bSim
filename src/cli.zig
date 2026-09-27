@@ -17,6 +17,8 @@ pub const Options = struct {
     fps: ?u32 = null,
     frames: ?u32 = null,
     time: f64 = 0,
+    /// Preview internal render size as a percentage of the output size.
+    scale: u32 = 75,
     json: bool = false,
     noAnimation: bool = false,
     resumeFrames: bool = false,
@@ -50,10 +52,11 @@ pub const Options = struct {
             if (i + 1 >= args.len) return error.MissingValue;
             i += 1;
             const value = args[i];
-            if (std.mem.eql(u8, key, "--shot")) out.shot = std.meta.stringToEnum(scene.Shot, value) orelse return error.InvalidShot else if (std.mem.eql(u8, key, "--scene")) out.scenePath = value else if (std.mem.eql(u8, key, "--output")) out.output = value else if (std.mem.eql(u8, key, "--format")) out.format = std.meta.stringToEnum(Format, value) orelse return error.InvalidFormat else if (std.mem.eql(u8, key, "--width")) out.width = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--height")) out.height = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--samples")) out.samples = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--fps")) out.fps = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--frames")) out.frames = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--time")) out.time = try std.fmt.parseFloat(f64, value) else if (std.mem.eql(u8, key, "--seconds")) out.seconds = try std.fmt.parseFloat(f64, value) else return error.UnknownOption;
+            if (std.mem.eql(u8, key, "--shot")) out.shot = std.meta.stringToEnum(scene.Shot, value) orelse return error.InvalidShot else if (std.mem.eql(u8, key, "--scene")) out.scenePath = value else if (std.mem.eql(u8, key, "--output")) out.output = value else if (std.mem.eql(u8, key, "--format")) out.format = std.meta.stringToEnum(Format, value) orelse return error.InvalidFormat else if (std.mem.eql(u8, key, "--width")) out.width = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--height")) out.height = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--samples")) out.samples = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--fps")) out.fps = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--frames")) out.frames = try std.fmt.parseInt(u32, value, 10) else if (std.mem.eql(u8, key, "--time")) out.time = try std.fmt.parseFloat(f64, value) else if (std.mem.eql(u8, key, "--seconds")) out.seconds = try std.fmt.parseFloat(f64, value) else if (std.mem.eql(u8, key, "--scale")) out.scale = try std.fmt.parseInt(u32, value, 10) else return error.UnknownOption;
         }
         if (!std.math.isFinite(out.time) or @abs(out.time) > 86400 or !std.math.isFinite(out.seconds) or out.seconds < 1 or out.seconds > 3600) return error.InvalidOptions;
         if (out.frames) |frames| if (frames == 0 or frames > 216000) return error.InvalidOptions;
+        if (out.scale < 50 or out.scale > 100) return error.InvalidOptions;
         return out;
     }
     /// Load the owned immutable scene in the supplied arena. No global I/O is used.
@@ -81,4 +84,7 @@ test "CLI rejects invalid flags and values" {
     try std.testing.expectError(error.MissingValue, Options.parse(&.{ "bSim", "render", "--shot" }));
     try std.testing.expectError(error.UnknownOption, Options.parse(&.{ "bSim", "render", "--thermals-off", "true" }));
     try std.testing.expectError(error.InvalidOptions, Options.parse(&.{ "bSim", "render", "--time", "nan" }));
+    try std.testing.expectError(error.InvalidOptions, Options.parse(&.{ "bSim", "preview", "--scale", "40" }));
+    const preview = try Options.parse(&.{ "bSim", "preview", "--scale", "50" });
+    try std.testing.expectEqual(@as(u32, 50), preview.scale);
 }

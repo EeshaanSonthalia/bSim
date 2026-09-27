@@ -17,6 +17,10 @@ pub fn build(b: *std.Build) void {
     renderer.addFileArg(b.path("native/renderer.m"));
     renderer.addArg("-o");
     exe.root_module.addObjectFile(renderer.addOutputFileArg("renderer.o"));
+    const window = b.addSystemCommand(&.{ "/usr/bin/xcrun", "clang", "-c", "-O2", "-fobjc-arc", "-Wall", "-Wextra", "-Werror", "-mmacosx-version-min=15.0" });
+    window.addFileArg(b.path("native/window.m"));
+    window.addArg("-o");
+    exe.root_module.addObjectFile(window.addOutputFileArg("window.o"));
     const home = b.graph.environ_map.get("HOME") orelse @panic("HOME required for the global Nix profile");
     const profile = b.fmt("{s}/.local/state/dotfiles/nix-profile", .{home});
     const exrLib = b.graph.environ_map.get("BSIM_OPENEXR") orelse profile;
@@ -39,6 +43,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkFramework("Metal", .{});
     exe.root_module.linkFramework("CoreGraphics", .{});
     exe.root_module.linkFramework("ImageIO", .{});
+    exe.root_module.linkFramework("AppKit", .{});
+    exe.root_module.linkFramework("MetalKit", .{});
+    exe.root_module.linkFramework("MetalFX", .{});
+    exe.root_module.linkFramework("QuartzCore", .{});
+    exe.root_module.linkFramework("MetalPerformanceShaders", .{});
     exe.root_module.addAnonymousImport("shader", .{ .root_source_file = b.path("shaders/renderer.metal") });
     b.installArtifact(exe);
     const run = b.addRunArtifact(exe);

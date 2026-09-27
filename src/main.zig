@@ -31,8 +31,16 @@ fn run(init: std.process.Init) !void {
             if (options.height == null) settings.quality.height = 720;
             const maps = try init.gpa.alloc(gpu.Map, @as(usize, settings.quality.width) * settings.quality.height);
             defer init.gpa.free(maps);
-            try app.prepareMap(settings, options.time, maps);
+            try app.prepareMap(settings, options.time, maps, true);
         }
+        return;
+    }
+    if (options.command == .preview) {
+        var progress = try @import("progress.zig").Progress.init(init.io, options.json, options.noAnimation, init.environ_map.get("NO_COLOR") != null);
+        defer progress.finish();
+        var app = try @import("application.zig").App.init(init.gpa, init.io, &progress);
+        defer app.deinit();
+        try @import("preview.zig").run(&app, options);
         return;
     }
     if (std.mem.eql(u8, command, "doctor")) {

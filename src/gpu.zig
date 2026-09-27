@@ -77,20 +77,24 @@ pub fn trace(context: *Context, scheduler: *Scheduler, io: std.Io, scene: Scene,
     var gpuSeconds: f64 = 0;
     while (offset < maps.len) {
         const count = @min(@as(usize, 8192), maps.len - offset);
-        const params = Params.fromScene(scene, time, @intCast(offset), @intCast(count));
-        try scheduler.gate(io);
-        if (bsGpuStart(context, &params) != 0) return error.MetalFailure;
-        while (true) {
-            try scheduler.gate(io);
-            const active = bsGpuStep(context);
-            if (active < 0) return error.MetalFailure;
-            if (active == 0) break;
-        }
-        @memcpy(maps[offset..][0..count], bsGpuMap(context)[0..count]);
-        gpuSeconds += bsGpuSeconds(context);
+        gpuSeconds += try traceTile(context, scheduler, io, scene, time, offset, maps[offset..][0..count]);
         offset += count;
     }
     return gpuSeconds;
+}
+/// Trace one bounded tile at a pixel offset. The caller may interleave event polling.
+pub fn traceTile(context: *Context, scheduler: *Scheduler, io: std.Io, scene: Scene, time: f64, offset: usize, maps: []Map) !f64 {
+    const params = Params.fromScene(scene, time, @intCast(offset), @intCast(maps.len));
+    try scheduler.gate(io);
+    if (bsGpuStart(context, &params) != 0) return error.MetalFailure;
+    while (true) {
+        try scheduler.gate(io);
+        const active = bsGpuStep(context);
+        if (active < 0) return error.MetalFailure;
+        if (active == 0) break;
+    }
+    @memcpy(maps, bsGpuMap(context)[0..maps.len]);
+    return bsGpuSeconds(context);
 }
 comptime {
     std.debug.assert(@sizeOf(Params) == 144);
