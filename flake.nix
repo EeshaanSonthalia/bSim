@@ -5,8 +5,8 @@
     let pkgs = import nixpkgs { system = "aarch64-darwin"; };
     in {
       devShells.aarch64-darwin.default = pkgs.mkShellNoCC {
-        packages = [ pkgs.openexr pkgs.pkg-config pkgs.ffmpeg pkgs.just ];
-        BSIM_OPENEXR = "${pkgs.openexr}";
+        packages = [ pkgs.openexr ];
+        BSIM_OPENEXR = "${pkgs.lib.getLib pkgs.openexr}";
         BSIM_OPENEXR_DEV = "${pkgs.openexr.dev}";
         DEVELOPER_DIR = "/Library/Developer/CommandLineTools";
       };

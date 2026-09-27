@@ -20,8 +20,18 @@ ms.topic: reference
 | `.githooks/post-commit` | Push each commit |
 | `flake.nix` | Pin the project package environment |
 | `locks/toolchains.json` | Record toolchain versions |
+| `src/geodesic.zig` | Scalar f64 Kerr reference solver |
+| `src/scene.zig` | Validated versioned scene data |
+| `src/material.zig` | Deterministic disk emission |
+| `src/thermal.zig` | Scheduling thresholds and hysteresis |
+| `src/gpu.zig` | Bounded Metal scheduling |
+| `shaders/renderer.metal` | Ray queues and map shading |
+| `native/renderer.m` | Metal framework bridge |
+| `build.zig` | Zig build graph |
+| `justfile` | Build and validation commands |
 
 ## Related Pages
 
+- [Validation Record](refValidation.md#validation-record)
 - [Documentation Index](../../index.md#documentation-index)
 - [Specification](refBSimSpecification.md#bsim-specification)

@@ -15,6 +15,7 @@ ms.topic: reference
 
 - [Specification](modules/references/refBSimSpecification.md#bsim-specification)
 - [File and Command Index](modules/references/refAnnexBIndexOfFilesAndCommands.md#file-and-command-index)
+- [Validation Record](modules/references/refValidation.md#validation-record)
 
 ## Related Pages
 

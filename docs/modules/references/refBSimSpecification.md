@@ -186,6 +186,7 @@ After implementation and verification, assign ASD documentation to a GPT-6-Luna 
 
 ## Related Pages
 
+- [Validation Record](refValidation.md#validation-record)
 - [Documentation Index](../../index.md#documentation-index)
 - [File and Command Index](refAnnexBIndexOfFilesAndCommands.md#file-and-command-index)
 - [bSim](../../../README.md#bsim)
