@@ -22,6 +22,10 @@ sh scripts/bootstrap.sh
 just check
 ```
 
+Bootstrap requires the dotfiles checkout at HOME/dotfiles.
+Run `just build` to build. Run `just test` to test.
+The profile at HOME/.local/state/dotfiles/nix-profile provides OpenEXR, Imath, and FFmpeg.
+
 The thermal guard pauses workloads at 37.5 degrees Celsius battery temperature or 75 degrees Celsius CPU or GPU temperature.
 It also stops work when a sensor fails.
 Readings below 5 degrees Celsius are invalid on this host.

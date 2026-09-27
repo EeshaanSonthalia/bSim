@@ -5,10 +5,10 @@ bootstrap:
     sh scripts/bootstrap.sh
 
 build:
-    nix develop --command python3 scripts/thermal-run.py zig build -j2 -Doptimize=ReleaseSafe
+    python3 scripts/thermal-run.py zig build -j2 -Doptimize=ReleaseSafe
 
 test:
-    nix develop --command python3 scripts/thermal-run.py zig build test -j2 -Doptimize=ReleaseSafe
+    python3 scripts/thermal-run.py zig build test -j2 -Doptimize=ReleaseSafe
 
 fmt:
     zig fmt build.zig src

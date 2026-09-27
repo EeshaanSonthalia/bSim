@@ -18,7 +18,7 @@ ms.topic: reference
 | `scripts/thermal-run.py` | Guard development process groups |
 | `scripts/check-asd-docs.sh` | Check ASD documentation conventions |
 | `.githooks/post-commit` | Push each commit |
-| `flake.nix` | Pin the project package environment |
+| `~/.local/state/dotfiles/nix-profile` | Provide OpenEXR, Imath, and FFmpeg |
 | `locks/toolchains.json` | Record toolchain versions |
 | `src/geodesic.zig` | Scalar f64 Kerr reference solver |
 | `src/scene.zig` | Validated versioned scene data |
