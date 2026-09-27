@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+branch=$(git symbolic-ref --short HEAD) || exit 0
+if git push -u origin "$branch"; then
+    printf 'auto-push: pushed %s to origin\n' "$branch"
+else
+    printf 'auto-push: failed; commit remains local. Do not retry without user instruction.\n' >&2
+fi

@@ -1,0 +1,8 @@
+{
+  "zig": "0.16.0",
+  "zls": "0.16.0",
+  "target": "aarch64-macos",
+  "optimize": "ReleaseSafe",
+  "nativeCompiler": "/usr/bin/xcrun clang",
+  "developerDir": "/Library/Developer/CommandLineTools"
+}

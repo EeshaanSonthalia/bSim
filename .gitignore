@@ -1,0 +1,12 @@
+.DS_Store
+.zig-cache/
+zig-out/
+.cache/
+renders/
+*.partial
+*.tmp
+result
+.direnv/
+__pycache__/
+.venv/
+*.dSYM/
