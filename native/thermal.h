@@ -16,4 +16,7 @@ void bsMonitorDestroy(BsMonitor *monitor);
 /* Maximum of available M4 die sensors. Missing groups invalidate the sample. */
 BsTemperatures bsMonitorRead(BsMonitor *monitor);
 double bsMonotonicTime(void);
+/* Install signal handlers that request Zig-owned cancellation at the next gate. */
+void bsInstallSignals(void);
+int bsIsCancelled(void);
 #endif

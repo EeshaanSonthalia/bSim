@@ -49,6 +49,10 @@ pub extern fn bsGpuShade(context: *Context, params: *const Params, map: [*]const
 pub extern fn bsGpuThreadWidth(context: *Context) u32;
 /// Select a measured legal group size.
 pub extern fn bsGpuSetGroup(context: *Context, size: u32) void;
+/// Begin a direct and scattered volume sample with a per-pixel active mask.
+pub extern fn bsGpuTransportStart(context: *Context, params: *const Params, mask: [*]const u8) c_int;
+/// Borrow the resolved full-transport sample. Negative alpha means unresolved.
+pub extern fn bsGpuTransportResult(context: *Context) ?[*]const f32;
 /// Application scheduling state. The caller owns and destroys both native handles.
 pub const Scheduler = struct {
     monitor: ?*thermal.Monitor,
@@ -56,6 +60,7 @@ pub const Scheduler = struct {
     /// Gate every wave on a fresh sample. Cooling is cancellable.
     pub fn gate(self: *Scheduler, io: std.Io) !void {
         while (true) {
+            if (thermal.bsIsCancelled() != 0) return error.Cancelled;
             try io.checkCancel();
             const sample = thermal.bsMonitorRead(self.monitor);
             switch (self.guard.evaluate(sample, thermal.bsMonotonicTime())) {

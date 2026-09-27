@@ -13,6 +13,7 @@ pub fn render(allocator: std.mem.Allocator, io: std.Io, scene: Scene, path: []co
     defer thermal.bsMonitorDestroy(monitor);
     var guard: thermal.Guard = .{};
     for (0..height) |y| {
+        if (thermal.bsIsCancelled() != 0) return error.Cancelled;
         while (true) {
             const t = thermal.bsMonitorRead(monitor);
             switch (guard.evaluate(t, thermal.bsMonotonicTime())) {

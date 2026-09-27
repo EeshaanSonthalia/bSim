@@ -124,3 +124,138 @@ kernel void shadeMap(device const Map *maps [[buffer(0)]],device float4 *colors 
     }
     colors[id]=float4(color,1);
 }
+
+struct Path { Ray ray; float4 radiance, weight; uint4 info; float4 padding; };
+float randomFloat(thread uint &state) {
+    state=state*747796405u+2891336453u;
+    uint word=((state>>((state>>28u)+4u))^state)*277803737u;
+    return clamp((float((word>>22u)^word)+0.5f)*(1.0f/4294967296.0f),1e-7f,1-1e-7f);
+}
+Ray localRay(float4 position,float a,float3 direction,float velocity) {
+    float r=1/position.x,s=sin(position.y),c=cos(position.y);
+    float sigma=r*r+a*a*c*c,delta=r*r-2*r+a*a,bigA=(r*r+a*a)*(r*r+a*a)-a*a*delta*s*s;
+    float gamma=rsqrt(1-velocity*velocity),pt=gamma*(-1+velocity*direction.z),pp=gamma*(direction.z-velocity);
+    float l=sqrt(bigA/sigma)*s*pp,e=sqrt(sigma*delta/bigA)*pt+2*a*r/bigA*l,vt=sqrt(sigma)*direction.y;
+    return {position,float4(-sqrt(sigma*delta)*direction.x/(r*r),vt,0.04f/r,0),float4(a,e,l,vt*vt+c*c*(l*l/(s*s)-a*a*e*e)),uint4(0)};
+}
+struct Frame { float velocity,energy,sigma;float3 direction; };
+Frame materialFrame(Ray ray) {
+    float4 y=ray.position,k=ray.constants;
+    float r=1/y.x,a=k.x,s=sin(y.y),c=cos(y.y),sigma=r*r+a*a*c*c,delta=r*r-2*r+a*a;
+    float bigA=(r*r+a*a)*(r*r+a*a)-a*a*delta*s*s,alpha=sqrt(sigma*delta/bigA),omega=2*a*r/bigA,varpi=sqrt(bigA/sigma)*s;
+    float velocity=clamp((1/(pow(r,1.5f)+a)-omega)*varpi/alpha,-0.8f,0.8f),gamma=rsqrt(1-velocity*velocity);
+    float pt=(k.y-omega*k.z)/alpha,pp=k.z/varpi;
+    float3 direction=normalize(float3(-ray.velocity.x*r*r/sqrt(sigma*delta),ray.velocity.y/sqrt(sigma),gamma*(pp-velocity*pt)));
+    return {velocity,-gamma*(pt-velocity*pp),sigma,direction};
+}
+float phasePdf(float cosine,float g) {
+    float d=1+g*g-2*g*cosine;
+    return (1-g*g)/(4*M_PI_F*d*sqrt(d));
+}
+float3 samplePhase(float3 axis,float g,thread uint &seed) {
+    float u=randomFloat(seed),ratio=(1-g*g)/(1-g+2*g*u);
+    float cosine=abs(g)<0.001f?2*u-1:clamp((1+g*g-ratio*ratio)/(2*g),-1.0f,1.0f);
+    float sine=sqrt(max(0.0f,1-cosine*cosine)),phi=2*M_PI_F*randomFloat(seed);
+    float3 basis=normalize(cross(axis,abs(axis.z)<0.9f?float3(0,0,1):float3(0,1,0))),other=cross(axis,basis);
+    return normalize(axis*cosine+sine*(cos(phi)*basis+sin(phi)*other));
+}
+uint directionBin(float3 direction) {
+    float azimuth=atan2(direction.z,direction.x);if(azimuth<0)azimuth+=2*M_PI_F;
+    return min(3u,uint((direction.y+1)*2))*8+min(7u,uint(azimuth*(4/M_PI_F)));
+}
+float3 guideSample(device const float *guide,uint band,thread uint &seed,thread float &pdf) {
+    float sum=0;for(uint i=0;i<32;i++)sum+=guide[band*32+i];
+    float target=randomFloat(seed)*sum;uint bin=31;
+    for(uint i=0;i<32;i++) {target-=guide[band*32+i];if(target<=0){bin=i;break;}}
+    float y=-1+0.5f*(float(bin/8)+randomFloat(seed)),phi=(M_PI_F/4)*(float(bin%8)+randomFloat(seed));
+    float radius=sqrt(max(0.0f,1-y*y));pdf=guide[band*32+bin]/sum*(8/M_PI_F);
+    return float3(radius*cos(phi),y,radius*sin(phi));
+}
+float guidePdf(device const float *guide,uint band,float3 direction) {
+    float sum=0;for(uint i=0;i<32;i++)sum+=guide[band*32+i];
+    return guide[band*32+directionBin(direction)]/sum*(8/M_PI_F);
+}
+void addReward(device atomic_uint *destination,uint amount) {
+    uint old=atomic_load_explicit(destination,memory_order_relaxed);
+    while(true) {
+        uint updated=old+min(amount,0x7fffffffu-old);
+        if(atomic_compare_exchange_weak_explicit(destination,&old,updated,memory_order_relaxed,memory_order_relaxed))return;
+    }
+}
+kernel void pathInit(device Path *paths [[buffer(0)]],device uint *queue [[buffer(1)]],constant Params &p [[buffer(2)]],device const uchar *mask [[buffer(3)]],uint id [[thread_position_in_grid]]) {
+    if(id>=p.work.y*2)return;
+    uint pixel=p.work.x+id/2,x=pixel%p.image.x,y=pixel/p.image.x;
+    uint seed=p.image.w^(pixel*1664525u)^(p.work.z*1013904223u);
+    float2 jitter=float2(randomFloat(seed),randomFloat(seed));
+    float2 screen=float2((2*(float(x)+jitter.x)-float(p.image.x))/float(p.image.y),1-2*(float(y)+jitter.y)/float(p.image.y));
+    screen=(screen+p.composition.yz)*tan(p.camera.w*0.5f);
+    float cr=cos(p.composition.x),sr=sin(p.composition.x);
+    float3 direction=normalize(float3(-1,-(screen.y*cr+screen.x*sr),screen.x*cr-screen.y*sr));
+    Ray ray=localRay(float4(1/p.camera.x,p.camera.y,p.camera.z,0),p.disk.x,direction,p.composition.w);
+    if(!mask[id/2] || (id%2==1 && p.material.y==0))ray.status.x=4;
+    paths[id]={ray,float4(0),float4(1,0,0,-log(randomFloat(seed))),uint4(id%2,0,seed,0xffffffffu),float4(0)};
+    queue[id]=id;
+}
+kernel void pathStep(device Path *paths [[buffer(0)]],device const uint *input [[buffer(1)]],device uint *output [[buffer(2)]],device atomic_uint *count [[buffer(3)]],constant Params &p [[buffer(4)]],constant uint &active [[buffer(5)]],device const float *guide [[buffer(6)]],device atomic_uint *learning [[buffer(7)]],uint id [[thread_position_in_grid]]) {
+    if(id>=active)return;
+    uint index=input[id];Path path=paths[index];Ray ray=path.ray;uint seed=path.info.z;
+    for(uint iteration=0;iteration<24 && ray.status.x==0;iteration++) {
+        float r=1/ray.position.x;
+        if((r<=horizon(p.disk.x)+0.001f && ray.velocity.x>0)||(r>=200 && ray.velocity.x<0)){ray.status.x=1;break;}
+        if(ray.status.z>=p.image.z*(p.work.w&65535u)){ray.status.x=3;break;}
+        float z=r*cos(ray.position.y),dz=-ray.velocity.x*r*r*cos(ray.position.y)-r*sin(ray.position.y)*ray.velocity.y;
+        if(r>=p.disk.y-1 && r<=p.disk.z+2) {
+            if(abs(z)<6*p.disk.w)ray.velocity.z=min(ray.velocity.z,0.08f*p.disk.w/max(abs(dz),0.01f));
+            if(z*dz<0 && abs(z)>=6*p.disk.w)ray.velocity.z=min(ray.velocity.z,max(0.08f*p.disk.w,(abs(z)-4*p.disk.w)*0.5f)/max(abs(dz),0.01f));
+        }
+        State old;float h;
+        if(!advance(ray,p.optics.w,old,h)){ray.status.x=3;break;}
+        Ray middle=ray;middle.position=(old.p+ray.position)*0.5f;middle.velocity.xy=(old.v+ray.velocity.xy)*0.5f;
+        Frame frame=materialFrame(middle);float radius=1/middle.position.x,height=radius*cos(middle.position.y)/p.disk.w;
+        float density=(radius>=p.disk.y && radius<=p.disk.z && abs(height)<8)?p.material.x*exp(-0.5f*height*height):0;
+        float tau=density*frame.energy*frame.sigma*h;
+        if(tau<=0)continue;
+        float3 source=emission(p,radius,middle.position.z,p.timing.x+middle.position.w,0);
+        if(path.info.x==0) {
+            float opacity=tau<0.01f?tau*(1-0.5f*tau+tau*tau/6):1-exp(-tau);
+            path.radiance.rgb+=path.weight.x*opacity*source;path.weight.x*=1-opacity;
+            if(path.weight.x<1e-10f){ray.status.x=1;break;}
+        } else {
+            float travelled=min(tau,path.weight.w);
+            if(path.info.y>0)path.radiance.rgb+=path.weight.x*travelled*source;
+            if(tau<path.weight.w){path.weight.w-=tau;continue;}
+            float fraction=path.weight.w/tau;
+            ray.position=mix(old.p,ray.position,fraction);ray.velocity.xy=mix(old.v,ray.velocity.xy,fraction);
+            Frame collision=materialFrame(ray);
+            uint band=min(3u,uint(clamp((1/ray.position.x-p.disk.y)/(p.disk.z-p.disk.y),0.0f,0.999f)*4));
+            float3 direction;float guided=0;bool useGuide=(p.work.w&65536u)!=0;
+            if(useGuide && randomFloat(seed)<0.2f)direction=guideSample(guide,band,seed,guided);
+            else {direction=samplePhase(collision.direction,p.color.w,seed);if(useGuide)guided=guidePdf(guide,band,direction);}
+            float physical=phasePdf(dot(collision.direction,direction),p.color.w);
+            float pdf=useGuide?0.8f*physical+0.2f*guided:physical;
+            path.weight.x*=p.material.y*physical/pdf;
+            if(path.info.y==0)path.info.w=band*32+directionBin(direction);
+            uint steps=ray.status.z;
+            ray=localRay(ray.position,p.disk.x,direction,collision.velocity);ray.status.z=steps;
+            path.info.y++;
+            if(path.info.y>=(p.work.w&65535u)){ray.status.x=3;break;}
+            if(path.info.y>=3) {
+                float survival=clamp(path.weight.x,0.05f,0.95f);
+                if(randomFloat(seed)>survival){ray.status.x=1;break;}
+                path.weight.x/=survival;
+            }
+            path.weight.w=-log(randomFloat(seed));
+        }
+    }
+    path.ray=ray;path.info.z=seed;paths[index]=path;
+    if(ray.status.x==0)output[atomic_fetch_add_explicit(count,1,memory_order_relaxed)]=index;
+    else if(path.info.w<128 && ray.status.x!=3) {
+        float reward=dot(path.radiance.rgb,float3(0.2126f,0.7152f,0.0722f));
+        addReward(&learning[path.info.w],uint(clamp(reward*4096,0.0f,65535.0f)));
+    }
+}
+kernel void pathResolve(device const Path *paths [[buffer(0)]],device float4 *colors [[buffer(1)]],constant Params &p [[buffer(2)]],uint id [[thread_position_in_grid]]) {
+    if(id>=p.work.y)return;
+    Path direct=paths[id*2],scattered=paths[id*2+1];
+    colors[id]=float4(direct.radiance.rgb+scattered.radiance.rgb,(direct.ray.status.x==3 || scattered.ray.status.x==3)?-1.0f:1.0f);
+}

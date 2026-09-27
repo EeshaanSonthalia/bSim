@@ -38,7 +38,7 @@ try:
         t = json.loads(line)
         values = [t["batteryC"], t["cpuC"], t["gpuC"]]
         now = time.clock_gettime(time.CLOCK_MONOTONIC)
-        if not all(0 < v < 130 for v in values) or abs(now - t["sampleTime"]) > 1:
+        if not all(5 <= v < 130 for v in values) or abs(now - t["sampleTime"]) > 1:
             raise RuntimeError("Invalid thermal sample")
         peak = [max(a, b) for a, b in zip(peak, values)]
         hot = values[0] >= 37.5 or max(values[1:]) >= 75 or t["thermalState"] >= 1

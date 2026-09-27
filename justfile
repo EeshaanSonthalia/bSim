@@ -5,10 +5,10 @@ bootstrap:
     sh scripts/bootstrap.sh
 
 build:
-    python3 scripts/thermal-run.py zig build -j2 -Doptimize=ReleaseSafe
+    nix develop --command python3 scripts/thermal-run.py zig build -j2 -Doptimize=ReleaseSafe
 
 test:
-    python3 scripts/thermal-run.py zig build test -j2 -Doptimize=ReleaseSafe
+    nix develop --command python3 scripts/thermal-run.py zig build test -j2 -Doptimize=ReleaseSafe
 
 fmt:
     zig fmt build.zig src
@@ -27,3 +27,6 @@ run *args:
 
 validate-gpu: build
     python3 scripts/thermal-run.py ./zig-out/bin/bSim validate-gpu
+
+validate-export: build
+    python3 scripts/thermal-run.py python3 scripts/verify-exports.py

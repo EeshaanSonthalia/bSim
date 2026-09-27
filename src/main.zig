@@ -4,12 +4,37 @@ const scene = @import("scene.zig");
 const gpu = @import("gpu.zig");
 
 /// Own all application resources through the explicit Zig 0.16 process context.
-pub fn main(init: std.process.Init) !void {
+pub fn main(init: std.process.Init) void {
+    thermal.bsInstallSignals();
+    run(init) catch |err| {
+        std.debug.print("bSim: {s}\n", .{@errorName(err)});
+        std.process.exit(if (err == error.Cancelled) 130 else 1);
+    };
+}
+fn run(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     var outputBuffer: [4096]u8 = undefined;
     var output = std.Io.File.stdout().writer(init.io, &outputBuffer);
     defer output.interface.flush() catch |err| std.debug.print("output: {s}\n", .{@errorName(err)});
     const command = if (args.len > 1) args[1] else "help";
+    const options = try @import("cli.zig").Options.parse(args);
+    if (options.command == .render or options.command == .prepare) {
+        var progress = try @import("progress.zig").Progress.init(init.io, options.json, options.noAnimation, init.environ_map.get("NO_COLOR") != null);
+        defer progress.finish();
+        var app = try @import("application.zig").App.init(init.gpa, init.io, &progress);
+        defer app.deinit();
+        var settings = try options.loadScene(init.gpa, init.io);
+        if (options.command == .render) {
+            try app.render(settings, options);
+        } else {
+            if (options.width == null) settings.quality.width = 1280;
+            if (options.height == null) settings.quality.height = 720;
+            const maps = try init.gpa.alloc(gpu.Map, @as(usize, settings.quality.width) * settings.quality.height);
+            defer init.gpa.free(maps);
+            try app.prepareMap(settings, options.time, maps);
+        }
+        return;
+    }
     if (std.mem.eql(u8, command, "doctor")) {
         const monitor = thermal.bsMonitorCreate();
         defer thermal.bsMonitorDestroy(monitor);
@@ -17,6 +42,17 @@ pub fn main(init: std.process.Init) !void {
         try output.interface.print("bSim  Zig 0.16.0  ReleaseSafe\n\n  Battery  {d:.1} C\n  CPU      {d:.1} C\n  GPU      {d:.1} C\n  Sensors  {s}\n", .{ t.batteryC, t.cpuC, t.gpuC, if (t.valid != 0) "available" else "unavailable" });
     } else if (std.mem.eql(u8, command, "shots")) {
         try output.interface.writeAll("wide   Iconic equatorial composition\norbit  Oblique orbit\nclose  Close disk pass\n");
+    } else if (options.command == .@"validate-export") {
+        var settings = scene.Scene.preset(.wide);
+        settings.quality.width = 16;
+        settings.quality.height = 16;
+        var pixels: [16 * 16 * 4]f32 = undefined;
+        for (0..16 * 16) |i| {
+            pixels[i * 4 ..][0..4].* = .{ 4, 2, 0.5, 1 };
+        }
+        try @import("output.zig").image(init.gpa, init.io, settings, .exr, "renders/export-check.exr", &pixels);
+        try @import("output.zig").image(init.gpa, init.io, settings, .png, "renders/export-check.png", &pixels);
+        try output.interface.writeAll("Saved linear EXR and 16-bit PNG fixtures\n");
     } else if (std.mem.eql(u8, command, "reference")) {
         var settings = scene.Scene.preset(.wide);
         settings.quality.width = 320;

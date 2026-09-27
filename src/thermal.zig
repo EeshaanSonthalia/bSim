@@ -11,6 +11,10 @@ pub extern fn bsMonitorDestroy(monitor: ?*Monitor) void;
 pub extern fn bsMonitorRead(monitor: ?*Monitor) Temperatures;
 /// Monotonic seconds, using the same clock as each sample.
 pub extern fn bsMonotonicTime() f64;
+/// Request cancellation with SIGINT or SIGTERM. Zig retains cleanup ownership.
+pub extern fn bsInstallSignals() void;
+/// Poll the signal-safe request flag at bounded work boundaries.
+pub extern fn bsIsCancelled() c_int;
 /// Result of the mandatory scheduling gate.
 pub const Decision = enum { proceed, cool, sensorFailure };
 /// Hysteresis state owned by the scheduler. No override is exposed.
@@ -32,7 +36,7 @@ pub const Guard = struct {
     }
 };
 fn validTemperature(t: f64) bool {
-    return std.math.isFinite(t) and t > 0 and t < 130;
+    return std.math.isFinite(t) and t >= 5 and t < 130;
 }
 comptime {
     std.debug.assert(@sizeOf(Temperatures) == 40);
@@ -49,5 +53,8 @@ test "thermal hysteresis and unavailable sensors fail closed" {
     try std.testing.expectEqual(Decision.proceed, guard.evaluate(t, 1));
     try std.testing.expectEqual(Decision.sensorFailure, guard.evaluate(t, 3));
     t.cpuC = std.math.nan(f64);
+    try std.testing.expectEqual(Decision.sensorFailure, guard.evaluate(t, 1));
+    t.cpuC = 60;
+    t.gpuC = 0.1;
     try std.testing.expectEqual(Decision.sensorFailure, guard.evaluate(t, 1));
 }

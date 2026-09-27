@@ -6,6 +6,14 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+static volatile sig_atomic_t cancellationRequested=0;
+static void requestCancellation(int number) {(void)number;cancellationRequested=1;}
+void bsInstallSignals(void) {
+    struct sigaction action={0};action.sa_handler=requestCancellation;sigemptyset(&action.sa_mask);
+    sigaction(SIGINT,&action,NULL);sigaction(SIGTERM,&action,NULL);
+}
+int bsIsCancelled(void) {return cancellationRequested!=0;}
 
 typedef struct {
     uint32_t key;
@@ -48,7 +56,7 @@ static double readKey(BsMonitor *m, uint32_t key) {
     } else if (type == keyCode("sp78") && in.info.size == 2) {
         result = (int16_t)((out.bytes[0] << 8) | out.bytes[1]) / 256.0;
     }
-    return isfinite(result) && result > 0 && result < 130 ? result : NAN;
+    return isfinite(result) && result >= 5 && result < 130 ? result : NAN;
 }
 static void discover(BsMonitor *m, const char **names, size_t count, uint32_t *keys, size_t *found) {
     for (size_t i = 0; i < count; i++) {

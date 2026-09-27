@@ -48,6 +48,7 @@ pub const Quality = struct {
     tolerance: f64 = 0.000002,
     maxSteps: u32 = 4096,
     maxBounces: u32 = 12,
+    guiding: bool = true,
 };
 /// Film timing. Shutter is an angle in degrees.
 pub const Timing = struct { fps: u32 = 24, duration: f64 = 8, shutter: f64 = 180 };

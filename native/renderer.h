@@ -32,4 +32,7 @@ double bsGpuSeconds(BsGpu *gpu);
 const float *bsGpuShade(BsGpu *gpu, const BsParams *params, const BsMap *map, uint32_t count);
 uint32_t bsGpuThreadWidth(BsGpu *gpu);
 void bsGpuSetGroup(BsGpu *gpu, uint32_t size);
+/* Full volume transport. The mask has one byte per pixel; zero skips a sample. */
+int bsGpuTransportStart(BsGpu *gpu,const BsParams *params,const uint8_t *mask);
+const float *bsGpuTransportResult(BsGpu *gpu);
 #endif

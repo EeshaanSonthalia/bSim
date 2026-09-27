@@ -8,6 +8,7 @@
         packages = [ pkgs.openexr ];
         BSIM_OPENEXR = "${pkgs.lib.getLib pkgs.openexr}";
         BSIM_OPENEXR_DEV = "${pkgs.openexr.dev}";
+        BSIM_IMATH_DEV = "${pkgs.lib.getDev pkgs.imath}";
         DEVELOPER_DIR = "/Library/Developer/CommandLineTools";
       };
     };
