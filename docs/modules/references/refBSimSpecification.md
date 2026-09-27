@@ -166,7 +166,7 @@ Use separate correctness, GPU validation, and benchmark commands.
 
 Pin Zig and ZLS to 0.16.0. Default to ReleaseSafe.
 Compile the native bridge with Apple Clang and the Apple SDK.
-Use Nix-managed FFmpeg and reproducibly pinned OpenEXRCore.
+Use Nix-managed FFmpeg and reproducibly pinned OpenEXRCore from the global dotfiles flake.
 
 Start with runtime Metal compilation and cached pipelines.
 Select developer tools per project. Do not change the global developer directory.
@@ -174,7 +174,7 @@ Follow the dotfiles master prompt, Zig prompt, ASD documentation rules, and comm
 
 Keep generated caches, renders, and build output outside version control.
 Create one commit per concern and verify each automatic push to the public repository.
-After implementation and verification, assign ASD documentation to a GPT-6-Luna max subagent.
+After implementation and verification, update ASD documentation in the same change set.
 
 
 ## References

@@ -20,7 +20,8 @@ Never bypass a thermal guard or change the hardware thermal controls.
 Use one concern per commit. End the summary with a period and keep it within 72 characters.
 Every commit pushes with `.githooks/post-commit`. Verify the remote commit.
 Never amend or force-push. Do not retry a failed push without user instruction.
-After implementation and verification, use a GPT-6-Luna max subagent for ASD documentation, as the user requested.
+Use plain web-facing READMEs named `ghREADME` with no frontmatter.
+Write ASD-STE100-compliant documentation.
 
 ## Related Pages
 
